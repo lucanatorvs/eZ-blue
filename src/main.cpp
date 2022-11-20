@@ -74,6 +74,9 @@
 #define bit6 0x40
 #define bit7 0x80
 
+// define constants
+#define SetHeaterTemp 100 // set the heater temperature to 100 degrees
+
 //function prototypes
 double read_temperature();
 // void set_gauges();
@@ -82,10 +85,6 @@ double read_temperature();
 
 void setup() {
   // setup code
-
-  // set the clock speed to 20MHz
-  // this is the maximum speed for the nano every
-
 
   // initialize the spi bus
   SPI.begin();
@@ -243,6 +242,19 @@ void loop() {
       Serial.print("HVIL OK - ");
     #endif
   }
+
+  // close the heater contactor (active high) if the heater switch is active and the temperature is below the SetHeaterTemp
+  if (heater_switch && temperature < SetHeaterTemp) {
+    PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
+    #if DEBUG
+      Serial.print("Heater on - ");
+    #endif
+  } else {
+    PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
+    #if DEBUG
+      Serial.print("Heater off - ");
+    #endif
+  } 
 
 
   #if DEBUG
