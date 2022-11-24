@@ -1,8 +1,9 @@
 #include <Arduino.h>
 #include <SPI.h>
+#include <mcp2515.h>
 
 // define a debug mode to tern off the serial output when not needed
-#define DEBUG 1
+#define DEBUG 1 // probably just leave this on even in production so any errors can be debugged
 
 /*
     * nano every (ATMega4809) pin configuration
@@ -31,7 +32,6 @@
     D19       |  hydrolic pump      |  digital output
     D20       |  vacuum pump        |  digital output
     D21       |  running input      |  digital input
-
 */
 
 /* SPI info
@@ -65,23 +65,34 @@
 #define SCK_PIN 13 // PB5
 
 // define bit masks for the drive mode pins
-#define bit0 0x01
-#define bit1 0x02
-#define bit2 0x04
-#define bit3 0x08
-#define bit4 0x10
-#define bit5 0x20
-#define bit6 0x40
-#define bit7 0x80
+#define bit0 0x01 // 0000 0001
+#define bit1 0x02 // 0000 0010
+#define bit2 0x04 // 0000 0100
+#define bit3 0x08 // 0000 1000
+#define bit4 0x10 // 0001 0000
+#define bit5 0x20 // 0010 0000
+#define bit6 0x40 // 0100 0000
+#define bit7 0x80 // 1000 0000
 
 // define constants
-#define SetHeaterTemp 100 // set the heater temperature to 100 degrees
+#define SetHeaterTemp 50 // set the heater temperature to 50 degrees
+#define LoopFrequency 25 // set the loop frequency to 100Hz
 
 //function prototypes
 double read_temperature();
 // void set_gauges();
-// void set_lights();
-// void HVI_fault();
+
+// global variables
+// gauge variables
+uint8_t fuel_gauge = 100; // value between 0 and the max of a uint8_t (255)
+uint8_t temperature_gauge = 100; // value between 0 and the max of a uint8_t (255)
+uint8_t rpm_gauge = 50; // value between 0 and the max of a uint8_t (255)
+
+int last_time = 0; // used to keep track to the loop frequency
+int loop_delay = 10; // used to keep track to the loop frequency
+
+// setup for Timer Counter A 0 (TCA0)
+
 
 void setup() {
   // setup code
@@ -100,6 +111,7 @@ void setup() {
     Serial.print("Clock speed: ");
     Serial.print(F_CPU/1000000);
     Serial.println("MHz\n");
+    Serial.println("eZ blue - firmware version: 0.1.0 - By: Luca van Straaten\n");
   #endif
 
   // set the pins to output mode
@@ -110,6 +122,11 @@ void setup() {
   PORTD_DIRSET = bit4; // VACUUM_PUMP_PIN
   PORTD_DIRSET = bit1; // HEATER_CONTACTOR_PIN
   PORTA_DIRSET = bit0; // BLOWER_PIN
+
+  // set the gauge pins to output mode
+  PORTF_DIRSET = bit4; // TEMP_GAUGE_PIN pwm output
+  PORTF_DIRSET = bit5; // RPM_GAUGE_PIN frequency output (not pwm) with Timer Counter B (TCB)
+  PORTC_DIRSET = bit6; // FUEL_GAUGE_PIN pwm output
 
   // set the output pins to low
   PORTB_OUTCLR = bit1; // OIL_LIGHT_PIN
@@ -147,33 +164,8 @@ void setup() {
 
 void loop() {
   // main loop code
-  // PORTB_OUTSET = bit1; // OIL_LIGHT_PIN
-  // delay(100);
-  // PORTB_OUTSET = bit0; // BATTERY_LIGHT_PIN
-  // delay(100);
-  // PORTD_OUTSET = bit7; // FAULT_HVIL_PIN
-  // delay(100);
-  // PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN
-  // delay(100);
-  // PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN
-  // delay(100);
-  // PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
-  // delay(100);
-  // PORTA_OUTSET = bit0; // BLOWER_PIN
-  // delay(1000);
-  // PORTB_OUTCLR = bit1; // OIL_LIGHT_PIN
-  // delay(100);
-  // PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
-  // delay(100);
-  // PORTD_OUTCLR = bit7; // FAULT_HVIL_PIN
-  // delay(100);
-  // PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN
-  // delay(100);
-  // PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN
-  // delay(100);
-  // PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
-  // delay(1000);
-  // PORTA_OUTCLR = bit0; // BLOWER_PIN
+
+  // read all the sensors
 
   // read the drive mode pins
   uint8_t drive_mode = 1;
@@ -230,40 +222,30 @@ void loop() {
     Serial.print(" - ");
   #endif
 
-  // open the HVIL relay (active high) if the bi-metal switch is open and the temperature is NAN
-  if (!bi_metal_switch && isnan(temperature)) {
-    PORTD_OUTCLR = bit7; // FAULT_HVIL_PIN
-    #if DEBUG
-      Serial.print("HVIL fault - ");
-    #endif
-  } else {
-    PORTD_OUTSET = bit7; // FAULT_HVIL_PIN
-    #if DEBUG
-      Serial.print("HVIL OK - ");
-    #endif
-  }
+  // move the gauges
+  analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
+  analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
+  tone(RPM_GAUGE_PIN, rpm_gauge);
 
-  // close the heater contactor (active high) if the heater switch is active and the temperature is below the SetHeaterTemp
-  if (heater_switch && temperature < SetHeaterTemp) {
-    PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
-    #if DEBUG
-      Serial.print("Heater on - ");
-    #endif
-  } else {
-    PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
-    #if DEBUG
-      Serial.print("Heater off - ");
-    #endif
-  } 
+  // read the can bus
+  // TODO add can bus code
 
 
+
+  // end of loop
   #if DEBUG
+    int time = millis();
+    int loop_time = time - last_time;
+    last_time = time;
+    Serial.print("Loop frequency: ");
+    Serial.print(1000/loop_time);
+    Serial.println("Hz");
     Serial.println("\n");
   #endif
-  delay(1000);
+  delay(loop_delay);
 }
 
-double read_temperature() {
+double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
 
   SPI.end();
 
@@ -285,17 +267,11 @@ double read_temperature() {
 
   SPI.begin();
 
-  #if DEBUG
-    Serial.print("Raw temperature: ");
-    Serial.print(v);
-    Serial.print(" - ");
-  #endif
-
   if (v & bit2) {
     #if DEBUG
       Serial.print("Thermocouple open circuit - ");
     #endif
-    return NAN; // check for open circuit
+    return NAN; // thermocouple is open circuit
   }
 
   // The lower three bits (0,1,2) are discarded status bits
