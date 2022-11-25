@@ -80,6 +80,7 @@
 
 //function prototypes
 double read_temperature();
+void irqHandler();
 // void set_gauges();
 
 // global variables
@@ -87,6 +88,9 @@ double read_temperature();
 uint8_t fuel_gauge = 100; // value between 0 and the max of a uint8_t (255)
 uint8_t temperature_gauge = 100; // value between 0 and the max of a uint8_t (255)
 uint8_t rpm_gauge = 50; // value between 0 and the max of a uint8_t (255)
+
+volatile bool interrupt = false;
+struct can_frame frame;
 
 int last_time = 0; // used to keep track to the loop frequency
 int loop_delay = 10; // used to keep track to the loop frequency
@@ -133,9 +137,11 @@ void setup() {
   PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
   PORTD_OUTCLR = bit7; // FAULT_HVIL_PIN
   PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN
-  PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN
   PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
-  PORTA_OUTCLR = bit0; // BLOWER_PIN
+
+  // set teh vac and blower pins to high
+  PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN
+  PORTA_OUTSET = bit0; // BLOWER_PIN
 
   // set the pins to input mode
   PORTD_DIRCLR = bit5; // RUNNING_INPUT_PIN
@@ -156,6 +162,23 @@ void setup() {
   // set the CS pins high
   digitalWrite(TEMP_SENSOR_CS_PIN, HIGH);
   digitalWrite(CAN_CS_PIN, HIGH);
+
+  // toggle blower for 3 seconds
+  PORTA_OUTCLR = bit0; // BLOWER_PIN
+  delay(3000);
+  PORTA_OUTSET = bit0; // BLOWER_PIN
+
+  #if DEBUG
+    Serial.println("CAN setup - CAN_500KBPS - MCP_8MHZ");
+  #endif
+
+  attachInterrupt(4, irqHandler, FALLING);
+
+  MCP2515 mcp2515(10);
+  mcp2515.reset();
+  mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
+  mcp2515.setLoopbackMode();
+
 
   #if DEBUG
     Serial.println("Setup complete\n");
@@ -227,9 +250,38 @@ void loop() {
   analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
   tone(RPM_GAUGE_PIN, rpm_gauge);
 
+  // depending on the drive mode set the vacuum pump and blower
+  if (drive_mode == 0) {
+    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN
+    PORTA_OUTSET = bit0; // BLOWER_PIN
+  } else if (drive_mode == 1) {
+    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN
+    PORTA_OUTSET = bit0; // BLOWER_PIN
+  } else if (drive_mode == 2) {
+    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN
+    PORTA_OUTCLR = bit0; // BLOWER_PIN
+  }
+
   // read the can bus
   // TODO add can bus code
 
+  if (interrupt) {
+    interrupt = false;
+
+    uint8_t irq = mcp2515.getInterrupts();
+
+    if (irq & MCP2515::CANINTF_RX0IF) {
+      if (mcp2515.readMessage(MCP2515::RXB0, &frame) == MCP2515::ERROR_OK) {
+        // frame contains received from RXB0 message
+      }
+    }
+
+    if (irq & MCP2515::CANINTF_RX1IF) {
+      if (mcp2515.readMessage(MCP2515::RXB1, &frame) == MCP2515::ERROR_OK) {
+        // frame contains received from RXB1 message
+      }
+    }
+  }
 
 
   // end of loop
@@ -243,6 +295,10 @@ void loop() {
     Serial.println("\n");
   #endif
   delay(loop_delay);
+}
+
+void irqHandler() {
+    interrupt = true;
 }
 
 double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
