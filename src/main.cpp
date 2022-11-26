@@ -108,8 +108,12 @@ struct can_frame frame;
 int last_time = 0; // used to keep track to the loop frequency
 int loop_delay = 10; // used to keep track to the loop frequency
 
-struct can_frame canMsg;
-MCP2515 mcp2515(10);
+struct can_frame canMsg; // first in first out buffer for the can messages
+MCP2515 mcp2515(8);
+
+// // make 2 pointer to the canMsg array, one for the fist message and one for the last message
+// struct can_frame *firstMsg = &canMsg[0];
+// struct can_frame *lastMsg = &canMsg[0];
 
 /****************************************************************************************/
 /******************************  Setup  *************************************************/
@@ -203,7 +207,6 @@ void setup() {
 
   attachInterrupt(4, irqHandler, FALLING);
 
-  MCP2515 mcp2515(10);
   mcp2515.reset();
   mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
   mcp2515.setNormalMode();
@@ -284,20 +287,20 @@ void loop() {
   /**********************************************************/
   /*************  Read the can bus  *************************/
   /**********************************************************/
+
   #if DEBUG
     Serial.print("Interupt: ");
     Serial.print(interrupt);
     Serial.print(" - ");
   #endif
+
   interrupt = false;
 
+  // read the can bus
   if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
-    // print all the can id's
-    #if DEBUG
-      Serial.print("ID: ");
-      Serial.print(canMsg.can_id, HEX);
-      Serial.print(" - ");
-    #endif
+    Serial.print("CAN ID: ");
+    Serial.print(canMsg.can_id, HEX); // print ID
+    Serial.print(" - ");
   }
 
   /**********************************************************/
@@ -344,7 +347,20 @@ void loop() {
 /******************************  Functions  *********************************************/
 /****************************************************************************************/
 
-void irqHandler() { interrupt = true; } // interrupt handler for the can bus
+void irqHandler() {
+  interrupt = true;
+  // we need to read the message into the canMsg object array
+  // so we write to ware the lastMsg pointe is pointing to plus one and then update the pointer, unless we are at the end of the array, then we start at the beginning
+  // if (lastMsg == &canMsg[CAN_MSG_BUFFER_SIZE - 1]) {
+  //   lastMsg = canMsg;
+  // } else {
+  //   lastMsg++;
+  // }
+  // mcp2515.readMessage(lastMsg);
+
+  // clear the interrupt
+  // mcp2515.clearInterrupts();
+  }
 
 double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
 
