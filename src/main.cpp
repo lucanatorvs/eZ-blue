@@ -2,8 +2,8 @@
 #include <SPI.h>
 #include <mcp2515.h>
 
-// define a debug mode to tern off the serial output when not needed
-#define DEBUG 1 // probably just leave this on even in production so any errors can be debugged
+// I would love to port this to a real time os, but than i would need to port freeRTOS to the arduino nano every
+// TODO: port freeRTOS to the arduino nano every
 
 /*
     * nano every (ATMega4809) pin configuration
@@ -24,14 +24,14 @@
     D12       |  MISO               |  SPI                        |  P
     D13       |  SCK                |  SPI                        |  P
     AREF      |  fault HVIL         |  digital output             |  PD7 (port D, pin 7)
-    D14       |  heater switch      |  digital input              |  PA
-    D15       |  Bi metal switch    |  digital input              |  PA
-    D16       |  heater contactor   |  digital output             |  PA
-    D17       |  Drive mode 1       |  digital input              |  PA
-    D18       |  Drive mode 3       |  digital input              |  PA
-    D19       |  hydrolic pump      |  digital output
-    D20       |  vacuum pump        |  digital output
-    D21       |  running input      |  digital input
+    D14       |  heater switch      |  digital input              |  P
+    D15       |  Bi metal switch    |  digital input              |  P
+    D16       |  heater contactor   |  digital output             |  P
+    D17       |  Drive mode 1       |  digital input              |  P
+    D18       |  Drive mode 3       |  digital input              |  P
+    D19       |  hydrolic pump      |  digital output             |  P
+    D20       |  vacuum pump        |  digital output             |  P
+    D21       |  running input      |  digital input              |  P
 */
 
 /* SPI info
@@ -40,6 +40,13 @@
  * the CAN module has a interrupt pin on D4
  * the temperature sensor has a CS on pin D7
 */
+
+/****************************************************************************************
+ ******************************  Define pins and constants ******************************
+ ****************************************************************************************/
+
+// define a debug mode to tern off the serial output when not needed
+#define DEBUG 1 // probably just leave this on even in production so any errors can be debugged
 
 // define the pins with human readable names
 #define BLOWER_PIN 2 // PA0
@@ -78,12 +85,18 @@
 #define SetHeaterTemp 50 // set the heater temperature to 50 degrees
 #define LoopFrequency 25 // set the loop frequency to 100Hz
 
-//function prototypes
+/****************************************************************************************
+ ******************************  function prototypes  ***********************************
+ ****************************************************************************************/
+
 double read_temperature();
 void irqHandler();
 // void set_gauges();
 
-// global variables
+/****************************************************************************************
+ ******************************  Global Variables  **************************************
+ ****************************************************************************************/
+
 // gauge variables
 uint8_t fuel_gauge = 100; // value between 0 and the max of a uint8_t (255)
 uint8_t temperature_gauge = 100; // value between 0 and the max of a uint8_t (255)
@@ -97,9 +110,11 @@ int loop_delay = 10; // used to keep track to the loop frequency
 
 // setup for Timer Counter A 0 (TCA0)
 
+/****************************************************************************************
+ ******************************  Setup  *************************************************
+ ****************************************************************************************/
 
 void setup() {
-  // setup code
 
   // initialize the spi bus
   SPI.begin();
@@ -163,11 +178,6 @@ void setup() {
   digitalWrite(TEMP_SENSOR_CS_PIN, HIGH);
   digitalWrite(CAN_CS_PIN, HIGH);
 
-  // toggle blower for 3 seconds
-  PORTA_OUTCLR = bit0; // BLOWER_PIN
-  delay(3000);
-  PORTA_OUTSET = bit0; // BLOWER_PIN
-
   #if DEBUG
     Serial.println("CAN setup - CAN_500KBPS - MCP_8MHZ");
   #endif
@@ -184,6 +194,10 @@ void setup() {
     Serial.println("Setup complete\n");
   #endif
 }
+
+/****************************************************************************************
+ ******************************  Main Loop  *********************************************
+ ****************************************************************************************/
 
 void loop() {
   // main loop code
@@ -297,9 +311,11 @@ void loop() {
   delay(loop_delay);
 }
 
-void irqHandler() {
-    interrupt = true;
-}
+/****************************************************************************************
+ ******************************  Functions  *********************************************
+ ****************************************************************************************/
+
+void irqHandler() { interrupt = true; } // interrupt handler for the can bus
 
 double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
 
@@ -336,3 +352,38 @@ double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8
   // The remaining bits are the number of 0.25 degree (C) counts
   return v*0.25;
 }
+
+
+// #include <SPI.h>
+// #include <mcp2515.h>
+
+// struct can_frame canMsg;
+// MCP2515 mcp2515(8);
+
+
+// void setup() {
+//   Serial.begin(115200);
+  
+//   mcp2515.reset();
+//   mcp2515.setBitrate(CAN_500KBPS);
+//   mcp2515.setNormalMode();
+  
+//   Serial.println("------- CAN Read ----------");
+//   Serial.println("ID  DLC   DATA");
+// }
+
+// void loop() {
+//   if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
+//     Serial.print(canMsg.can_id, HEX); // print ID
+//     Serial.print(" "); 
+//     Serial.print(canMsg.can_dlc, HEX); // print DLC
+//     Serial.print(" ");
+    
+//     for (int i = 0; i<canMsg.can_dlc; i++)  {  // print the data
+//       Serial.print(canMsg.data[i],HEX);
+//       Serial.print(" ");
+//     }
+
+//     Serial.println();      
+//   }
+// }
