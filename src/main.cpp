@@ -41,9 +41,9 @@
  * the temperature sensor has a CS on pin D7
 */
 
-/****************************************************************************************
- ******************************  Define pins and constants ******************************
- ****************************************************************************************/
+/****************************************************************************************/
+/******************************  Define pins and constants ******************************/
+/****************************************************************************************/
 
 // define a debug mode to tern off the serial output when not needed
 #define DEBUG 1 // probably just leave this on even in production so any errors can be debugged
@@ -85,17 +85,17 @@
 #define SetHeaterTemp 50 // set the heater temperature to 50 degrees
 #define LoopFrequency 25 // set the loop frequency to 100Hz
 
-/****************************************************************************************
- ******************************  function prototypes  ***********************************
- ****************************************************************************************/
+/****************************************************************************************/
+/******************************  Function prototypes  ***********************************/
+/****************************************************************************************/
 
 double read_temperature();
 void irqHandler();
 // void set_gauges();
 
-/****************************************************************************************
- ******************************  Global Variables  **************************************
- ****************************************************************************************/
+/****************************************************************************************/
+/******************************  Global Variables  **************************************/
+/****************************************************************************************/
 
 // gauge variables
 uint8_t fuel_gauge = 100; // value between 0 and the max of a uint8_t (255)
@@ -108,24 +108,21 @@ struct can_frame frame;
 int last_time = 0; // used to keep track to the loop frequency
 int loop_delay = 10; // used to keep track to the loop frequency
 
-// setup for Timer Counter A 0 (TCA0)
+struct can_frame canMsg;
+MCP2515 mcp2515(10);
 
-/****************************************************************************************
- ******************************  Setup  *************************************************
- ****************************************************************************************/
+/****************************************************************************************/
+/******************************  Setup  *************************************************/
+/****************************************************************************************/
 
 void setup() {
+  /******************************************/
+  /****** start serial if in debug mode *****/
+  /******************************************/
 
-  // initialize the spi bus
-  SPI.begin();
-  // SPI.setBitOrder(MSBFIRST);
-  // SPI.setDataMode(SPI_MODE0);
-  // SPI.setClockDivider(SPI_CLOCK_DIV4);
-
-  // start serial if in debug mode
   #if DEBUG
     Serial.begin(115200);
-    Serial.println("Serial started");
+    Serial.println("Serial started\n");
     // print clock speed
     Serial.print("Clock speed: ");
     Serial.print(F_CPU/1000000);
@@ -133,7 +130,15 @@ void setup() {
     Serial.println("eZ blue - firmware version: 0.1.0 - By: Luca van Straaten\n");
   #endif
 
-  // set the pins to output mode
+  /************************************************************/
+  /****** Setup the pins to in or output and high or low ******/
+  /************************************************************/
+
+  #if DEBUG
+    Serial.println("Setting up pin(mode)s...\n");
+  #endif
+
+  // set the output pins to output mode
   PORTB_DIRSET = bit1; // OIL_LIGHT_PIN
   PORTB_DIRSET = bit0; // BATTERY_LIGHT_PIN
   PORTD_DIRSET = bit7; // FAULT_HVIL_PIN
@@ -147,25 +152,35 @@ void setup() {
   PORTF_DIRSET = bit5; // RPM_GAUGE_PIN frequency output (not pwm) with Timer Counter B (TCB)
   PORTC_DIRSET = bit6; // FUEL_GAUGE_PIN pwm output
 
-  // set the output pins to low
+  // set the vac and blower pins to high
+  PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN
+  PORTA_OUTSET = bit0; // BLOWER_PIN
+
+  // set the rest of the output pins to low
   PORTB_OUTCLR = bit1; // OIL_LIGHT_PIN
   PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
   PORTD_OUTCLR = bit7; // FAULT_HVIL_PIN
   PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN
   PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
 
-  // set teh vac and blower pins to high
-  PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN
-  PORTA_OUTSET = bit0; // BLOWER_PIN
-
-  // set the pins to input mode
+  // set the input pins to input mode
   PORTD_DIRCLR = bit5; // RUNNING_INPUT_PIN
   PORTD_DIRCLR = bit0; // DRIVE_MODE_1_PIN
   PORTA_DIRCLR = bit2; // DRIVE_MODE_3_PIN
   PORTD_DIRCLR = bit2; // BI_METAL_SWITCH_PIN 
   PORTD_DIRCLR = bit3; // HEATER_SWITCH_PIN
 
-  // SPI setup
+  /**************************/
+  /****** setup the SPI *****/
+  /**************************/
+
+  #if DEBUG
+    Serial.println("Setting up SPI...\n");
+  #endif
+
+  // begin the SPI bus
+  SPI.begin();
+
   // set the SPI pins modes
   pinMode(TEMP_SENSOR_CS_PIN, OUTPUT);
   pinMode(CAN_CS_PIN, OUTPUT);
@@ -178,8 +193,12 @@ void setup() {
   digitalWrite(TEMP_SENSOR_CS_PIN, HIGH);
   digitalWrite(CAN_CS_PIN, HIGH);
 
+  /*******************************/
+  /****** Start the CAN bus ******/
+  /*******************************/
+
   #if DEBUG
-    Serial.println("CAN setup - CAN_500KBPS - MCP_8MHZ");
+    Serial.println("CAN setup - CAN_500KBPS - MCP_8MHZ\n");
   #endif
 
   attachInterrupt(4, irqHandler, FALLING);
@@ -187,7 +206,8 @@ void setup() {
   MCP2515 mcp2515(10);
   mcp2515.reset();
   mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
-  mcp2515.setLoopbackMode();
+  mcp2515.setNormalMode();
+
 
 
   #if DEBUG
@@ -195,14 +215,16 @@ void setup() {
   #endif
 }
 
-/****************************************************************************************
- ******************************  Main Loop  *********************************************
- ****************************************************************************************/
+/****************************************************************************************/
+/******************************  Main Loop  *********************************************/
+/****************************************************************************************/
 
 void loop() {
   // main loop code
 
-  // read all the sensors
+  /**********************************************************/
+  /*************  Read all the sensors  *********************/
+  /**********************************************************/
 
   // read the drive mode pins
   uint8_t drive_mode = 1;
@@ -259,10 +281,36 @@ void loop() {
     Serial.print(" - ");
   #endif
 
-  // move the gauges
+  /**********************************************************/
+  /*************  Read the can bus  *************************/
+  /**********************************************************/
+  #if DEBUG
+    Serial.print("Interupt: ");
+    Serial.print(interrupt);
+    Serial.print(" - ");
+  #endif
+  interrupt = false;
+
+  if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
+    // print all the can id's
+    #if DEBUG
+      Serial.print("ID: ");
+      Serial.print(canMsg.can_id, HEX);
+      Serial.print(" - ");
+    #endif
+  }
+
+  /**********************************************************/
+  /*************  Move the gauges  **************************/
+  /**********************************************************/
+
   analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
   analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
   tone(RPM_GAUGE_PIN, rpm_gauge);
+
+  /**********************************************************/
+  /*************  Set the outputs  **************************/
+  /**********************************************************/
 
   // depending on the drive mode set the vacuum pump and blower
   if (drive_mode == 0) {
@@ -276,29 +324,10 @@ void loop() {
     PORTA_OUTCLR = bit0; // BLOWER_PIN
   }
 
-  // read the can bus
-  // TODO add can bus code
+  /**********************************************************/
+  /*************  End of loop  ******************************/
+  /**********************************************************/
 
-  if (interrupt) {
-    interrupt = false;
-
-    uint8_t irq = mcp2515.getInterrupts();
-
-    if (irq & MCP2515::CANINTF_RX0IF) {
-      if (mcp2515.readMessage(MCP2515::RXB0, &frame) == MCP2515::ERROR_OK) {
-        // frame contains received from RXB0 message
-      }
-    }
-
-    if (irq & MCP2515::CANINTF_RX1IF) {
-      if (mcp2515.readMessage(MCP2515::RXB1, &frame) == MCP2515::ERROR_OK) {
-        // frame contains received from RXB1 message
-      }
-    }
-  }
-
-
-  // end of loop
   #if DEBUG
     int time = millis();
     int loop_time = time - last_time;
@@ -311,9 +340,9 @@ void loop() {
   delay(loop_delay);
 }
 
-/****************************************************************************************
- ******************************  Functions  *********************************************
- ****************************************************************************************/
+/****************************************************************************************/
+/******************************  Functions  *********************************************/
+/****************************************************************************************/
 
 void irqHandler() { interrupt = true; } // interrupt handler for the can bus
 
@@ -352,6 +381,10 @@ double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8
   // The remaining bits are the number of 0.25 degree (C) counts
   return v*0.25;
 }
+
+/****************************************************************************************/
+/******************************  Ene of code  *******************************************/
+/****************************************************************************************/
 
 
 // #include <SPI.h>
