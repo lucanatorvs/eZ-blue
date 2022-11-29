@@ -91,7 +91,6 @@
 
 double read_temperature();
 void irqHandler();
-// void set_gauges();
 
 /****************************************************************************************/
 /******************************  Global Variables  **************************************/
@@ -110,10 +109,6 @@ int loop_delay = 10; // used to keep track to the loop frequency
 
 struct can_frame canMsg; // first in first out buffer for the can messages
 MCP2515 mcp2515(8);
-
-// // make 2 pointer to the canMsg array, one for the fist message and one for the last message
-// struct can_frame *firstMsg = &canMsg[0];
-// struct can_frame *lastMsg = &canMsg[0];
 
 /****************************************************************************************/
 /******************************  Setup  *************************************************/
@@ -135,7 +130,7 @@ void setup() {
   #endif
 
   /************************************************************/
-  /****** Setup the pins to in or output and high or low ******/
+  /****** Setup the pins to In or Output and High or Low ******/
   /************************************************************/
 
   #if DEBUG
@@ -175,7 +170,7 @@ void setup() {
   PORTD_DIRCLR = bit3; // HEATER_SWITCH_PIN
 
   /**************************/
-  /****** setup the SPI *****/
+  /****** Setup the SPI *****/
   /**************************/
 
   #if DEBUG
@@ -202,16 +197,18 @@ void setup() {
   /*******************************/
 
   #if DEBUG
-    Serial.println("CAN setup - CAN_500KBPS - MCP_8MHZ\n");
+    Serial.println("CAN setup - CAN_250KBPS - MCP_8MHZ\n");
   #endif
 
   attachInterrupt(4, irqHandler, FALLING);
 
   mcp2515.reset();
-  mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
+  mcp2515.setBitrate(CAN_250KBPS, MCP_8MHZ);
   mcp2515.setNormalMode();
 
-
+  /*******************************/
+  /****** End of setup ***********/
+  /*******************************/
 
   #if DEBUG
     Serial.println("Setup complete\n");
@@ -296,12 +293,12 @@ void loop() {
 
   interrupt = false;
 
-  // read the can bus
-  if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
-    Serial.print("CAN ID: ");
-    Serial.print(canMsg.can_id, HEX); // print ID
-    Serial.print(" - ");
-  }
+  // // read the can bus
+  // if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
+  //   Serial.print("CAN ID: ");
+  //   Serial.print(canMsg.can_id, HEX); // print ID
+  //   Serial.print(" - ");
+  // }
 
   /**********************************************************/
   /*************  Move the gauges  **************************/
@@ -328,7 +325,7 @@ void loop() {
   }
 
   /**********************************************************/
-  /*************  End of loop  ******************************/
+  /*************  End the loop  *****************************/
   /**********************************************************/
 
   #if DEBUG
@@ -349,18 +346,26 @@ void loop() {
 
 void irqHandler() {
   interrupt = true;
-  // we need to read the message into the canMsg object array
-  // so we write to ware the lastMsg pointe is pointing to plus one and then update the pointer, unless we are at the end of the array, then we start at the beginning
-  // if (lastMsg == &canMsg[CAN_MSG_BUFFER_SIZE - 1]) {
-  //   lastMsg = canMsg;
-  // } else {
-  //   lastMsg++;
-  // }
-  // mcp2515.readMessage(lastMsg);
+  uint8_t irq = mcp2515.getInterrupts();
 
-  // clear the interrupt
-  // mcp2515.clearInterrupts();
+  if (irq & MCP2515::CANINTF_RX0IF) {
+    if (mcp2515.readMessage(MCP2515::RXB0, &frame) == MCP2515::ERROR_OK) {
+      // frame contains received from RXB0 message
+      Serial.print("RXB0 CAN ID: ");
+      Serial.print(canMsg.can_id, HEX); // print ID
+      Serial.print(" - ");
+    }
   }
+
+  if (irq & MCP2515::CANINTF_RX1IF) {
+    if (mcp2515.readMessage(MCP2515::RXB1, &frame) == MCP2515::ERROR_OK) {
+      // frame contains received from RXB1 message
+      Serial.print("RXB1 CAN ID: ");
+      Serial.print(canMsg.can_id, HEX); // print ID
+      Serial.print(" - ");
+    }
+  }
+}
 
 double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
 
