@@ -20,18 +20,18 @@
     D8        |  CAN CS             |  digital output             |  PE3 (port E, pin 3)
     D9        |  battery light      |  digital output             |  PB0 (port B, pin 0)
     D10       |  oil light          |  digital output             |  PB1 (port B, pin 1)
-    D11       |  MOSI               |  SPI                        |  P
-    D12       |  MISO               |  SPI                        |  P
-    D13       |  SCK                |  SPI                        |  P
+    D11       |  MOSI               |  SPI                        |  PB3 (port B, pin 3)
+    D12       |  MISO               |  SPI                        |  PB4 (port B, pin 4)
+    D13       |  SCK                |  SPI                        |  PB5 (port B, pin 5)
     AREF      |  fault HVIL         |  digital output             |  PD7 (port D, pin 7)
-    D14       |  heater switch      |  digital input              |  P
-    D15       |  Bi metal switch    |  digital input              |  P
-    D16       |  heater contactor   |  digital output             |  P
-    D17       |  Drive mode 1       |  digital input              |  P
-    D18       |  Drive mode 3       |  digital input              |  P
-    D19       |  hydrolic pump      |  digital output             |  P
-    D20       |  vacuum pump        |  digital output             |  P
-    D21       |  running input      |  digital input              |  P
+    D14       |  heater switch      |  digital input              |  PD3 (port D, pin 3)
+    D15       |  Bi metal switch    |  digital input              |  PD2 (port D, pin 2)
+    D16       |  heater contactor   |  digital output             |  PD1 (port D, pin 1)
+    D17       |  Drive mode 1       |  digital input              |  PD0 (port D, pin 0)
+    D18       |  Drive mode 3       |  digital input              |  PA2 (port A, pin 2)
+    D19       |  hydrolic pump      |  digital output             |  PA3 (port A, pin 3)
+    D20       |  vacuum pump        |  digital output             |  PD4 (port D, pin 4)
+    D21       |  running input      |  digital input              |  PD5 (port D, pin 5)
 */
 
 /* SPI info
