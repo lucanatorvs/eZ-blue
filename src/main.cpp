@@ -304,6 +304,7 @@ void loop() {
   /*************  Move the gauges  **************************/
   /**********************************************************/
 
+  fuel_gauge = map(temperature, 0, 200, 0, 255);
   analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
   analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
   tone(RPM_GAUGE_PIN, rpm_gauge);
@@ -312,15 +313,44 @@ void loop() {
   /*************  Set the outputs  **************************/
   /**********************************************************/
 
-  // depending on the drive mode set the vacuum pump and blower
+  // depending on the drive mode set the vacuum pump and hydro pump
   if (drive_mode == 0) {
-    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN
-    PORTA_OUTSET = bit0; // BLOWER_PIN
+    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN high
+    PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
   } else if (drive_mode == 1) {
-    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN
-    PORTA_OUTSET = bit0; // BLOWER_PIN
+    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN low
+    PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
   } else if (drive_mode == 2) {
-    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN
+    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN low
+    PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN low
+  }
+
+  /**********************************************************/
+  /*************  Do the hrater stuff ***********************/
+  /**********************************************************/
+
+  // if the heater switch is on (HEATER_SWITCH_PIN is high) and the bi-metal switch closed (BI_METAL_SWITCH_PIN is Low)
+  // then we can check if we can turn on the heater contacter
+
+  if (heater_switch && !bi_metal_switch) {
+    // now we check if the temperature is below the SetHeaterTemp
+    // we need some hystereses
+    int hysteresis = 2;
+    if (temperature < (SetHeaterTemp - hysteresis)) {
+      // turn on the heater contacter
+      PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
+      Serial.print("Heater on -");
+    } else if (temperature > (SetHeaterTemp + hysteresis)) {
+      // turn off the heater contacter
+      PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
+      Serial.print("Heater off -");
+    }
+  }
+
+  // tern the blower on if the heater is on or still warm
+  if (heater_switch || temperature > 40) {
+    PORTA_OUTSET = bit0; // BLOWER_PIN
+  } else {
     PORTA_OUTCLR = bit0; // BLOWER_PIN
   }
 
@@ -354,6 +384,9 @@ void irqHandler() {
       Serial.print("RXB0 CAN ID: ");
       Serial.print(canMsg.can_id, HEX); // print ID
       Serial.print(" - ");
+    } else {
+      // error reading message
+      Serial.println("Error reading RXB0 message");
     }
   }
 
@@ -363,6 +396,9 @@ void irqHandler() {
       Serial.print("RXB1 CAN ID: ");
       Serial.print(canMsg.can_id, HEX); // print ID
       Serial.print(" - ");
+    } else {
+      // error reading message
+      Serial.println("Error reading RXB1 message");
     }
   }
 }
