@@ -105,7 +105,7 @@ volatile bool interrupt = false;
 struct can_frame frame;
 
 int last_time = 0; // used to keep track to the loop frequency
-int loop_delay = 10; // used to keep track to the loop frequency
+int loop_delay = 100; // used to keep track to the loop frequency
 
 struct can_frame canMsg; // first in first out buffer for the can messages
 MCP2515 mcp2515(8);
@@ -339,19 +339,23 @@ void loop() {
     if (temperature < (SetHeaterTemp - hysteresis)) {
       // turn on the heater contacter
       PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
-      Serial.print("Heater on -");
+      Serial.print("Heater on - ");
     } else if (temperature > (SetHeaterTemp + hysteresis)) {
       // turn off the heater contacter
       PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
-      Serial.print("Heater off -");
+      Serial.print("Heater off - ");
     }
+  } else {
+    Serial.print("Heater off - ");
   }
 
   // tern the blower on if the heater is on or still warm
   if (heater_switch || temperature > 40) {
-    PORTA_OUTSET = bit0; // BLOWER_PIN
-  } else {
     PORTA_OUTCLR = bit0; // BLOWER_PIN
+    Serial.print("Blower on - ");
+  } else {
+    PORTA_OUTSET = bit0; // BLOWER_PIN
+    Serial.print("Blower off - ");
   }
 
   /**********************************************************/
@@ -406,10 +410,11 @@ void irqHandler() {
 double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
 
   SPI.end();
+  delay(1);
 
   uint16_t v; // 16 bit value to hold the raw temperature value
   digitalWrite(TEMP_SENSOR_CS_PIN, LOW); // enable the temperature sensor
-  delay(1); // wait for the sensor to wake up
+  delay(2); // wait for the sensor to wake up
 
   // Read in 16 bits,
   //  15    = 0 always
