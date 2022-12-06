@@ -47,6 +47,7 @@
 
 // define a debug mode to tern off the serial output when not needed
 #define DEBUG 1 // probably just leave this on even in production so any errors can be debugged
+#define CAN_DEBUG 1 // set to 1 to print the can messages to the serial monitor
 
 // define the pins with human readable names
 #define BLOWER_PIN 2 // PA0
@@ -82,15 +83,14 @@
 #define bit7 0x80 // 1000 0000
 
 // define constants
-#define SetHeaterTemp 50 // set the heater temperature to 50 degrees
-#define LoopFrequency 25 // set the loop frequency to 100Hz
+#define SetHeaterTemp 65 // set the heater temperature to 50 degrees
 
 /****************************************************************************************/
 /******************************  Function prototypes  ***********************************/
 /****************************************************************************************/
 
 double read_temperature();
-void irqHandler();
+// void irqHandler();
 
 /****************************************************************************************/
 /******************************  Global Variables  **************************************/
@@ -101,14 +101,18 @@ uint8_t fuel_gauge = 100; // value between 0 and the max of a uint8_t (255)
 uint8_t temperature_gauge = 100; // value between 0 and the max of a uint8_t (255)
 uint8_t rpm_gauge = 50; // value between 0 and the max of a uint8_t (255)
 
-volatile bool interrupt = false;
+// volatile bool interrupt = false;
 struct can_frame frame;
+struct can_frame canMsg;
+MCP2515 mcp2515(8);
 
 int last_time = 0; // used to keep track to the loop frequency
-int loop_delay = 100; // used to keep track to the loop frequency
+static int loop_delay = 10; // used to keep track to the loop frequency
 
-struct can_frame canMsg; // first in first out buffer for the can messages
-MCP2515 mcp2515(8);
+double temperature = 0; // used to store the temperature
+int last_temp_read = 0;
+
+int temperature_sensor_loop_count = 0; // used to keep track of the temperature sensor loop count
 
 /****************************************************************************************/
 /******************************  Setup  *************************************************/
@@ -200,7 +204,7 @@ void setup() {
     Serial.println("CAN setup - CAN_250KBPS - MCP_8MHZ\n");
   #endif
 
-  attachInterrupt(4, irqHandler, FALLING);
+  // attachInterrupt(4, irqHandler, FALLING);
 
   mcp2515.reset();
   mcp2515.setBitrate(CAN_250KBPS, MCP_8MHZ);
@@ -258,23 +262,40 @@ void loop() {
   }
   #if DEBUG
     Serial.print("Bi-metal switch: ");
-    Serial.print(bi_metal_switch);
+    if (bi_metal_switch) {
+      Serial.print("Closed");
+    } else {
+      Serial.print("Open");
+    }
     Serial.print(" - ");
   #endif
 
   // read the heater switch pin
-  uint8_t heater_switch = 0;
+  uint8_t heater_switch = 1;
   if (!(PORTD_IN & bit3)) {
-    heater_switch = 1;
+    heater_switch = 0;
   }
   #if DEBUG
     Serial.print("Heater switch: ");
     Serial.print(heater_switch);
-    Serial.print(" - ");
+    Serial.println(" - ");
   #endif
 
-  // read the temperature sensor
-  double temperature = read_temperature();
+
+  // only read the tem sensor every 800ms, we know the loop_delay so we calculate every whitch loop we should read the sensor and count the loops
+  if (temperature_sensor_loop_count >= 800 / loop_delay) {
+    temperature_sensor_loop_count = 0;
+    last_temp_read = millis();
+
+    // #if DEBUG
+    //   Serial.print("Reading temp sensor - ");
+    // #endif
+
+    // read the temperature sensor
+    temperature = read_temperature();
+  }
+  temperature_sensor_loop_count++;
+
   #if DEBUG
     Serial.print("Temperature: ");
     Serial.print(temperature);
@@ -291,7 +312,7 @@ void loop() {
     Serial.print(" - ");
   #endif
 
-  interrupt = false;
+  // interrupt = false;
 
   // // read the can bus
   // if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
@@ -300,11 +321,20 @@ void loop() {
   //   Serial.print(" - ");
   // }
 
+  if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
+    #if CAN_DEBUG
+      Serial.print(canMsg.can_id, HEX); // print ID
+      Serial.print(" "); 
+      Serial.print(canMsg.can_dlc, HEX); // print DLC
+      Serial.print(" ");
+    #endif
+  }
+
   /**********************************************************/
   /*************  Move the gauges  **************************/
   /**********************************************************/
 
-  fuel_gauge = map(temperature, 0, 200, 0, 255);
+  // temperature_gauge = map(temperature, 0, 80, 0, 255);
   analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
   analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
   tone(RPM_GAUGE_PIN, rpm_gauge);
@@ -315,13 +345,13 @@ void loop() {
 
   // depending on the drive mode set the vacuum pump and hydro pump
   if (drive_mode == 0) {
-    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN high
+    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN high
     PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
   } else if (drive_mode == 1) {
-    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN low
+    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN low
     PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
   } else if (drive_mode == 2) {
-    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN low
+    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN low
     PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN low
   }
 
@@ -332,25 +362,29 @@ void loop() {
   // if the heater switch is on (HEATER_SWITCH_PIN is high) and the bi-metal switch closed (BI_METAL_SWITCH_PIN is Low)
   // then we can check if we can turn on the heater contacter
 
-  if (heater_switch && !bi_metal_switch) {
+  if (heater_switch && bi_metal_switch && running) {
     // now we check if the temperature is below the SetHeaterTemp
     // we need some hystereses
     int hysteresis = 2;
     if (temperature < (SetHeaterTemp - hysteresis)) {
       // turn on the heater contacter
       PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
+      PORTB_OUTSET = bit0; // BATTERY_LIGHT_PIN
       Serial.print("Heater on - ");
     } else if (temperature > (SetHeaterTemp + hysteresis)) {
       // turn off the heater contacter
       PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
+      PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
       Serial.print("Heater off - ");
     }
   } else {
+    PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
+    PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
     Serial.print("Heater off - ");
   }
 
   // tern the blower on if the heater is on or still warm
-  if (heater_switch || temperature > 40) {
+  if ((heater_switch && running) || temperature > 40) {
     PORTA_OUTCLR = bit0; // BLOWER_PIN
     Serial.print("Blower on - ");
   } else {
@@ -378,34 +412,34 @@ void loop() {
 /******************************  Functions  *********************************************/
 /****************************************************************************************/
 
-void irqHandler() {
-  interrupt = true;
-  uint8_t irq = mcp2515.getInterrupts();
+// void irqHandler() {
+//   interrupt = true;
+//   uint8_t irq = mcp2515.getInterrupts();
 
-  if (irq & MCP2515::CANINTF_RX0IF) {
-    if (mcp2515.readMessage(MCP2515::RXB0, &frame) == MCP2515::ERROR_OK) {
-      // frame contains received from RXB0 message
-      Serial.print("RXB0 CAN ID: ");
-      Serial.print(canMsg.can_id, HEX); // print ID
-      Serial.print(" - ");
-    } else {
-      // error reading message
-      Serial.println("Error reading RXB0 message");
-    }
-  }
+//   if (irq & MCP2515::CANINTF_RX0IF) {
+//     if (mcp2515.readMessage(MCP2515::RXB0, &frame) == MCP2515::ERROR_OK) {
+//       // frame contains received from RXB0 message
+//       Serial.print("RXB0 CAN ID: ");
+//       Serial.print(canMsg.can_id, HEX); // print ID
+//       Serial.print(" - ");
+//     } else {
+//       // error reading message
+//       Serial.println("Error reading RXB0 message");
+//     }
+//   }
 
-  if (irq & MCP2515::CANINTF_RX1IF) {
-    if (mcp2515.readMessage(MCP2515::RXB1, &frame) == MCP2515::ERROR_OK) {
-      // frame contains received from RXB1 message
-      Serial.print("RXB1 CAN ID: ");
-      Serial.print(canMsg.can_id, HEX); // print ID
-      Serial.print(" - ");
-    } else {
-      // error reading message
-      Serial.println("Error reading RXB1 message");
-    }
-  }
-}
+//   if (irq & MCP2515::CANINTF_RX1IF) {
+//     if (mcp2515.readMessage(MCP2515::RXB1, &frame) == MCP2515::ERROR_OK) {
+//       // frame contains received from RXB1 message
+//       Serial.print("RXB1 CAN ID: ");
+//       Serial.print(canMsg.can_id, HEX); // print ID
+//       Serial.print(" - ");
+//     } else {
+//       // error reading message
+//       Serial.println("Error reading RXB1 message");
+//     }
+//   }
+// }
 
 double read_temperature() { // see: https://gist.github.com/sleemanj/059fce7f1b8087edfe7d7ef845a5d881
 
