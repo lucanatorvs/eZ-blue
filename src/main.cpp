@@ -97,9 +97,9 @@ double read_temperature();
 /****************************************************************************************/
 
 // gauge variables
-uint8_t fuel_gauge = 100; // value between 0 and the max of a uint8_t (255)
-uint8_t temperature_gauge = 100; // value between 0 and the max of a uint8_t (255)
-uint8_t rpm_gauge = 50; // value between 0 and the max of a uint8_t (255)
+uint8_t fuel_gauge = 0; // value between 0 and the max of a uint8_t (255)
+uint8_t temperature_gauge = 0; // value between 0 and the max of a uint8_t (255)
+uint8_t rpm_gauge = 0; // value between 0 and the max of a uint8_t (255)
 
 // volatile bool interrupt = false;
 struct can_frame frame;
@@ -113,6 +113,8 @@ double temperature = 0; // used to store the temperature
 int last_temp_read = 0;
 
 int temperature_sensor_loop_count = 0; // used to keep track of the temperature sensor loop count
+
+int16_t rpm = 0; // used to store the rpm
 
 /****************************************************************************************/
 /******************************  Setup  *************************************************/
@@ -306,11 +308,11 @@ void loop() {
   /*************  Read the can bus  *************************/
   /**********************************************************/
 
-  #if DEBUG
-    Serial.print("Interupt: ");
-    Serial.print(interrupt);
-    Serial.print(" - ");
-  #endif
+  // #if DEBUG
+  //   Serial.print("Interupt: ");
+  //   Serial.print(interrupt);
+  //   Serial.print(" - ");
+  // #endif
 
   // interrupt = false;
 
@@ -328,6 +330,25 @@ void loop() {
       Serial.print(canMsg.can_dlc, HEX); // print DLC
       Serial.print(" ");
     #endif
+    if (canMsg.can_id == 6) {
+      // take the 3d and 4th byte and convert it to a int
+      rpm = (canMsg.data[3] << 8) | canMsg.data[2];
+      #if DEBUG
+        Serial.print("RPM: ");
+        Serial.print(rpm);
+        Serial.print(" - ");
+      #endif
+      int8_t temp1 = canMsg.data[0];
+      int8_t temp2 = canMsg.data[1];
+      #if DEBUG
+        Serial.print("Temp1: ");
+        Serial.print(temp1);
+        Serial.print(" - ");
+        Serial.print("Temp2: ");
+        Serial.print(temp2);
+        Serial.print(" - ");
+      #endif
+    }
   }
 
   /**********************************************************/
@@ -335,8 +356,29 @@ void loop() {
   /**********************************************************/
 
   // temperature_gauge = map(temperature, 0, 80, 0, 255);
+
+  // fuel gauge
   analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
+
+  // temperature gauge
   analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
+
+  // rpm gauge
+  rpm_gauge = map(rpm, 0, 7000, 0, 230);
+  // mappedValue is never lower than 10
+  if (rpm_gauge < 10) {
+    rpm_gauge = 10;
+  } else if (rpm_gauge > 230) {
+    rpm_gauge = 230;
+  }
+  #if DEBUG
+    Serial.print("RPM 2:");
+    Serial.print(rpm);
+    Serial.print(" - ");
+    Serial.print("RPM gauge: ");
+    Serial.print(rpm_gauge);
+    Serial.print(" - ");
+  #endif
   tone(RPM_GAUGE_PIN, rpm_gauge);
 
   /**********************************************************/
