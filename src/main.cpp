@@ -47,7 +47,7 @@
 
 // define a debug mode to tern off the serial output when not needed
 #define DEBUG 1 // probably just leave this on even in production so any errors can be debugged
-#define CAN_DEBUG 1 // set to 1 to print the can messages to the serial monitor
+#define CAN_DEBUG 0 // set to 1 to print the can messages to the serial monitor
 
 // define the pins with human readable names
 #define BLOWER_PIN 2 // PA0
@@ -99,7 +99,7 @@ double read_temperature();
 // gauge variables
 uint8_t fuel_gauge = 0; // value between 0 and the max of a uint8_t (255)
 uint8_t temperature_gauge = 0; // value between 0 and the max of a uint8_t (255)
-uint8_t rpm_gauge = 0; // value between 0 and the max of a uint8_t (255)
+int16_t rpm_gauge = 0; // value between 0 and the max of a uint8_t (255)
 
 // volatile bool interrupt = false;
 struct can_frame frame;
@@ -107,7 +107,7 @@ struct can_frame canMsg;
 MCP2515 mcp2515(8);
 
 int last_time = 0; // used to keep track to the loop frequency
-static int loop_delay = 10; // used to keep track to the loop frequency
+static int loop_delay = 4; // used to keep track to the loop frequency
 
 double temperature = 0; // used to store the temperature
 int last_temp_read = 0;
@@ -115,6 +115,22 @@ int last_temp_read = 0;
 int temperature_sensor_loop_count = 0; // used to keep track of the temperature sensor loop count
 
 int16_t rpm = 0; // used to store the rpm
+int8_t temp_motor = 0; // used to store the temperature for the motor
+int8_t temp_inverter = 0; // used to store the temperature for the inverter
+int8_t temp_bat = 0; // used to store the temperature for the battery
+int16_t CURRENT = 0; // used to store the current
+int16_t CHARGE = 0; // used to store the charge in 0.1 Ah
+int8_t SOC = 0; // used to store the state of charge in %
+uint8_t chargingstatus = 0; // used to store the charging status
+uint8_t last_chargingstatus = 0; // used to store the last charging status
+unsigned long lastToggleTime = 0; // used to store the last time the charging status changed
+bool Batlight = false; // used to store the state of the battery light
+
+int8_t maxCelModTemp = 0; // used to store the max cell module temperature
+int8_t maxCelTemp = 0; // used to store the max cell temperature
+int8_t minCelTemp = 0; // used to store the min cell temperature
+
+const float SOC_LUT[] = {110, 100, 90, 87, 83, 80, 77, 73, 70, 69, 68, 67, 66, 64, 63, 62, 61, 60, 57, 53, 50, 45, 40, 38, 35, 32, 30, 29, 29, 28, 27, 26, 26, 25, 24, 24, 23, 22, 21, 21, 20, 20, 19, 19, 18, 18, 18, 17, 17, 16, 16, 15, 15, 15, 15, 14, 14, 14, 14, 14, 13, 13, 13, 13, 13, 12, 12, 12, 12, 12, 11, 11, 11, 11, 11, 10, 10, 10, 10, 10, 10, 10, 10, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 8, 8, 8, 8, 7, 7}; // lookup table for the state of charge
 
 /****************************************************************************************/
 /******************************  Setup  *************************************************/
@@ -125,7 +141,8 @@ void setup() {
   /****** start serial if in debug mode *****/
   /******************************************/
 
-  #if DEBUG
+  // if debug is enabled or can debug is enabled start the serial monitor
+  #if DEBUG || CAN_DEBUG
     Serial.begin(115200);
     Serial.println("Serial started\n");
     // print clock speed
@@ -243,7 +260,7 @@ void loop() {
   #if DEBUG
     Serial.print("Drive mode: ");
     Serial.print(drive_mode);
-    Serial.print(" - ");
+    Serial.print(", ");
   #endif
 
   // read the running input pin
@@ -254,7 +271,7 @@ void loop() {
   #if DEBUG
     Serial.print("Running: ");
     Serial.print(running);
-    Serial.print(" - ");
+    Serial.print(", ");
   #endif
 
   // read the bi-metal switch pin
@@ -269,7 +286,7 @@ void loop() {
     } else {
       Serial.print("Open");
     }
-    Serial.print(" - ");
+    Serial.print(", ");
   #endif
 
   // read the heater switch pin
@@ -280,7 +297,7 @@ void loop() {
   #if DEBUG
     Serial.print("Heater switch: ");
     Serial.print(heater_switch);
-    Serial.println(" - ");
+    Serial.print(", ");
   #endif
 
 
@@ -299,57 +316,124 @@ void loop() {
   temperature_sensor_loop_count++;
 
   #if DEBUG
-    Serial.print("Temperature: ");
+    Serial.print("Heater temperature: ");
     Serial.print(temperature);
-    Serial.print(" - ");
+    Serial.print(", ");
   #endif
 
   /**********************************************************/
   /*************  Read the can bus  *************************/
   /**********************************************************/
 
-  // #if DEBUG
-  //   Serial.print("Interupt: ");
-  //   Serial.print(interrupt);
-  //   Serial.print(" - ");
-  // #endif
-
-  // interrupt = false;
-
-  // // read the can bus
-  // if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
-  //   Serial.print("CAN ID: ");
-  //   Serial.print(canMsg.can_id, HEX); // print ID
-  //   Serial.print(" - ");
-  // }
-
   if (mcp2515.readMessage(&canMsg) == MCP2515::ERROR_OK) {
     #if CAN_DEBUG
-      Serial.print(canMsg.can_id, HEX); // print ID
-      Serial.print(" "); 
-      Serial.print(canMsg.can_dlc, HEX); // print DLC
-      Serial.print(" ");
+      if (1){
+        Serial.print(canMsg.can_id, HEX); // print ID
+        Serial.print(" "); 
+        Serial.print(canMsg.can_dlc, HEX); // print DLC
+        Serial.print(" ");
+        for (uint8_t i = 0; i < canMsg.can_dlc; i++) {
+          Serial.print(canMsg.data[i], DEC); // print data
+          Serial.print(" ");
+        }
+        Serial.println("");
+      }
     #endif
     if (canMsg.can_id == 6) {
+      #if CAN_DEBUG
+        Serial.print("Motor Message - ");
+      #endif
       // take the 3d and 4th byte and convert it to a int
       rpm = (canMsg.data[3] << 8) | canMsg.data[2];
-      #if DEBUG
-        Serial.print("RPM: ");
-        Serial.print(rpm);
-        Serial.print(" - ");
+      temp_motor = canMsg.data[0];
+      temp_inverter = canMsg.data[1];
+      // convert the temperature to celsius from fahrenheit
+      temp_motor = (temp_motor - 32) * 5 / 9;
+      temp_inverter = (temp_inverter - 32) * 5 / 9;
+    }
+    if (canMsg.can_id == 2578777344) {
+      #if CAN_DEBUG
+        Serial.print("BMS Message - ");
       #endif
-      int8_t temp1 = canMsg.data[0];
-      int8_t temp2 = canMsg.data[1];
-      #if DEBUG
-        Serial.print("Temp1: ");
-        Serial.print(temp1);
-        Serial.print(" - ");
-        Serial.print("Temp2: ");
-        Serial.print(temp2);
-        Serial.print(" - ");
+      CURRENT = (canMsg.data[0] << 8) | canMsg.data[1];
+      CHARGE = (canMsg.data[2] << 8) | canMsg.data[3];
+      SOC = canMsg.data[6];
+    }
+    if (canMsg.can_id == 0x99B50000) {
+      #if CAN_DEBUG
+        Serial.print("Charging Message - ");
       #endif
+      // take the 3d and 4th byte and convert it to a int
+      chargingstatus = canMsg.data[3];
+    }
+    if (canMsg.can_id == 0x99B50002) {
+      #if CAN_DEBUG
+        Serial.print("Cel Module Temp Message - ");
+      #endif
+      // byte 1 is Highest cell module temperature in the battery pack, encoded in 1 degree Celsius with basis of -100 C.
+      maxCelModTemp = canMsg.data[1];
+      maxCelModTemp = maxCelModTemp - 100;
+    }
+    if (canMsg.can_id == 0x99B50008) {
+      #if CAN_DEBUG
+        Serial.print("Cel Temp Message - ");
+      #endif
+      // byte 0 Lowest cell temperature in the battery pack, encoded in 1 degree Celsius with basis of -100 C
+      // byte 1 is Highest cell temperature in the battery pack, encoded in 1 degree Celsius with basis of -100 C.
+      minCelTemp = canMsg.data[0];
+      minCelTemp = minCelTemp - 100;
+      maxCelTemp = canMsg.data[1];
+      maxCelTemp = maxCelTemp - 100;
     }
   }
+
+  #if DEBUG
+    // Serial.print("\n");
+    Serial.print("Motor temp: ");
+    Serial.print(temp_motor);
+    Serial.print(", ");
+    Serial.print("Inverter temp: ");
+    Serial.print(temp_inverter);
+    Serial.print(", ");
+  #endif
+
+  #if DEBUG
+    Serial.print("Max Cel Mod Temp: ");
+    Serial.print(maxCelModTemp);
+    Serial.print(", ");
+    Serial.print("Min Cel Temp: ");
+    Serial.print(minCelTemp);
+    Serial.print(", ");
+    Serial.print("Max Cel Temp: ");
+    Serial.print(maxCelTemp);
+    Serial.print(", ");
+    // Serial.print("\n");
+  #endif
+
+  #if DEBUG
+    Serial.print("Current: ");
+    Serial.print(CURRENT);
+    Serial.print(", ");
+    Serial.print("Charge: ");
+    Serial.print(CHARGE);
+    Serial.print(", ");
+    Serial.print("SOC: ");
+    Serial.print(SOC);
+    Serial.print(", ");
+  #endif
+
+  #if DEBUG
+    Serial.print("charging status: ");
+    Serial.print(chargingstatus);
+    Serial.print(", ");
+  #endif
+
+  #if DEBUG
+    Serial.print("RPM: ");
+    Serial.print(rpm);
+    Serial.print(", ");
+    // Serial.print("\n");
+  #endif
 
   /**********************************************************/
   /*************  Move the gauges  **************************/
@@ -358,10 +442,44 @@ void loop() {
   // temperature_gauge = map(temperature, 0, 80, 0, 255);
 
   // fuel gauge
+  /*
+  pwm   sog
+  0 = Not Defined
+  7 = 100
+  8 = 99
+  9 = 90
+  10 = 77
+  12 = 67
+  15 = 52
+  20 = 40
+  30 = 26
+  40 = 22
+  45 = 21
+  50 = 20
+  60 = 17
+  70 = 8
+  80 = 5
+  90 = 2
+  100 = 1
+  110 = 0
+   */
+
+  // q: what function do we need to map the fuel level to the fuel gauge
+
+
+  // set it to half
+  fuel_gauge = SOC_LUT[SOC];
+  // fuel_gauge = 110; // 0 - 255
   analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
 
+  // tem gauge mapping
+  /*
+  pwm = temp
+  40 = 50%
+  */
+
   // temperature gauge
-  analogWrite(TEMP_GAUGE_PIN, temperature_gauge);
+  analogWrite(TEMP_GAUGE_PIN, 40);
 
   // rpm gauge
   rpm_gauge = map(rpm, 0, 7000, 0, 230);
@@ -374,10 +492,10 @@ void loop() {
   #if DEBUG
     Serial.print("RPM 2:");
     Serial.print(rpm);
-    Serial.print(" - ");
+    Serial.print(", ");
     Serial.print("RPM gauge: ");
     Serial.print(rpm_gauge);
-    Serial.print(" - ");
+    Serial.print(", ");
   #endif
   tone(RPM_GAUGE_PIN, rpm_gauge);
 
@@ -385,20 +503,25 @@ void loop() {
   /*************  Set the outputs  **************************/
   /**********************************************************/
 
-  // depending on the drive mode set the vacuum pump and hydro pump
-  if (drive_mode == 0) {
-    PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN high
-    PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
-  } else if (drive_mode == 1) {
-    PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN low
-    PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
-  } else if (drive_mode == 2) {
+  if (running) {
+    // depending on the drive mode set the vacuum pump and hydro pump
+    if (drive_mode == 0) {
+      PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN high
+      PORTA_OUTSET = bit3; // HYDRO_PUMP_PIN high
+    } else if (drive_mode == 1) {
+      PORTD_OUTCLR = bit4; // VACUUM_PUMP_PIN high
+      PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN low
+    } else if (drive_mode == 2) {
+      PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN low
+      PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN low
+    }
+  } else {
     PORTD_OUTSET = bit4; // VACUUM_PUMP_PIN low
     PORTA_OUTCLR = bit3; // HYDRO_PUMP_PIN low
   }
 
   /**********************************************************/
-  /*************  Do the hrater stuff ***********************/
+  /*************  Do the hrater stuff  **********************/
   /**********************************************************/
 
   // if the heater switch is on (HEATER_SWITCH_PIN is high) and the bi-metal switch closed (BI_METAL_SWITCH_PIN is Low)
@@ -411,27 +534,105 @@ void loop() {
     if (temperature < (SetHeaterTemp - hysteresis)) {
       // turn on the heater contacter
       PORTD_OUTSET = bit1; // HEATER_CONTACTOR_PIN
-      PORTB_OUTSET = bit0; // BATTERY_LIGHT_PIN
-      Serial.print("Heater on - ");
+      PORTB_OUTSET = bit1; // OIL_LIGHT_PIN
+      #if DEBUG
+        Serial.print("Heater on - ");
+      #endif
     } else if (temperature > (SetHeaterTemp + hysteresis)) {
       // turn off the heater contacter
       PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
-      PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
-      Serial.print("Heater off - ");
+      PORTB_OUTCLR = bit1; // OIL_LIGHT_PIN
+      #if DEBUG
+        Serial.print("Heater off - ");
+      #endif
     }
   } else {
     PORTD_OUTCLR = bit1; // HEATER_CONTACTOR_PIN
-    PORTB_OUTCLR = bit0; // BATTERY_LIGHT_PIN
-    Serial.print("Heater off - ");
+    PORTB_OUTCLR = bit1; // OIL_LIGHT_PIN
+    #if DEBUG
+      Serial.print("Heater off - ");
+    #endif
   }
 
   // tern the blower on if the heater is on or still warm
-  if ((heater_switch && running) || temperature > 40) {
+  if ((heater_switch && running) || temperature > 35) {
     PORTA_OUTCLR = bit0; // BLOWER_PIN
-    Serial.print("Blower on - ");
+    #if DEBUG
+      Serial.print("Blower on - ");
+    #endif
   } else {
     PORTA_OUTSET = bit0; // BLOWER_PIN
-    Serial.print("Blower off - ");
+    #if DEBUG
+      Serial.print("Blower off - ");
+    #endif
+  }
+
+  /**********************************************************/
+  /*************  Charging status light  ********************/
+  /**********************************************************/
+
+  // charging status
+  // 0 = Disconnected - light off
+  // 1 = Pre-heating - blinking fast 1Hz
+  // 2 = Pre-charging - light on
+  // 3 = Main Charging - light on
+  // 4 = Balancing - blinking slow 0.5Hz
+  // 5 = Charging Finished - blinking slow 0.25Hz
+  // 6 = Charging Error - blinking fast 1Hz
+
+  // variable to store the current time
+  unsigned long currentMillis = millis();
+
+  // check if the charging status has changed
+  if (chargingstatus != last_chargingstatus) {
+    // reset the last time the light was toggled
+    lastToggleTime = currentMillis;
+    // set the last charging status
+    last_chargingstatus = chargingstatus;
+  }
+
+  if (chargingstatus == 0) { // Disconnected
+    Batlight = false;
+  } else if (chargingstatus == 1) { // Pre-heating
+    // check if the current time is greater than the last time the light was toggled
+    if (currentMillis - lastToggleTime >= 500) {
+      // toggle the light
+      Batlight = !Batlight;
+      // reset the last time the light was toggled
+      lastToggleTime = currentMillis;
+    }
+  } else if (chargingstatus == 2 || chargingstatus == 3) { // Pre-charging or Main Charging
+    Batlight = true;
+  } else if (chargingstatus == 4) { // Balancing
+    // check if the current time is greater than the last time the light was toggled
+    if (currentMillis - lastToggleTime >= 1000) {
+      // toggle the light
+      Batlight = !Batlight;
+      // reset the last time the light was toggled
+      lastToggleTime = currentMillis;
+    }
+  } else if (chargingstatus == 5) { // Charging Finished
+    // check if the current time is greater than the last time the light was toggled
+    if (currentMillis - lastToggleTime >= 2000) {
+      // toggle the light
+      Batlight = !Batlight;
+      // reset the last time the light was toggled
+      lastToggleTime = currentMillis;
+    }
+  } else if (chargingstatus == 6) { // Charging Error
+    // check if the current time is greater than the last time the light was toggled
+    if (currentMillis - lastToggleTime >= 500) {
+      // toggle the light
+      Batlight = !Batlight;
+      // reset the last time the light was toggled
+      lastToggleTime = currentMillis;
+    }
+  }
+
+  if (Batlight){
+    PORTB_OUTSET = bit0;
+  } else {
+    PORTB_OUTCLR = bit0;
   }
 
   /**********************************************************/
@@ -445,7 +646,7 @@ void loop() {
     Serial.print("Loop frequency: ");
     Serial.print(1000/loop_time);
     Serial.println("Hz");
-    Serial.println("\n");
+    // Serial.println("\n");
   #endif
   delay(loop_delay);
 }
@@ -463,7 +664,7 @@ void loop() {
 //       // frame contains received from RXB0 message
 //       Serial.print("RXB0 CAN ID: ");
 //       Serial.print(canMsg.can_id, HEX); // print ID
-//       Serial.print(" - ");
+//       Serial.print(", ");
 //     } else {
 //       // error reading message
 //       Serial.println("Error reading RXB0 message");
@@ -475,7 +676,7 @@ void loop() {
 //       // frame contains received from RXB1 message
 //       Serial.print("RXB1 CAN ID: ");
 //       Serial.print(canMsg.can_id, HEX); // print ID
-//       Serial.print(" - ");
+//       Serial.print(", ");
 //     } else {
 //       // error reading message
 //       Serial.println("Error reading RXB1 message");
