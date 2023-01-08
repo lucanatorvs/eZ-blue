@@ -472,6 +472,33 @@ void loop() {
   // fuel_gauge = 110; // 0 - 255
   analogWrite(FUEL_GAUGE_PIN, fuel_gauge);
 
+  // mapping the individual temperature to a rainge of 0 - 255
+  // temp_motor -> -40 C tot 135 C, thermal shutdown at 165 C
+  // temp_inverter -> -40 C tot 80 C, thermal shutdown at 95 C
+  // maxCelModTemp -> -40 C tot 80 C, temperature might increase during cell balancing, so we mighit not want to use this
+  // maxCelTemp -> discharging: -25 C tot 55 C, charging: 0 C tot 55 C
+
+  // we map the values so that the opearting range is between 64 and 192
+  // 64 = 1/4 of 255
+  // 192 = 3/4 of 255
+  // 128 = 1/2 of 255
+
+  #define blue 64
+  #define red 192
+
+  // temp_motor
+  temp_motor = map(temp_motor, -40, 135, blue, red);
+
+  // temp_inverter
+  temp_inverter = map(temp_inverter, -40, 80, blue, red);
+
+  // maxCelModTemp
+  maxCelModTemp = map(maxCelModTemp, -40, 80, blue, red);
+
+  // maxCelTemp
+  maxCelTemp = map(maxCelTemp, -25, 55, blue, red);
+  
+
   // tem gauge mapping
   /*
   pwm = temp
