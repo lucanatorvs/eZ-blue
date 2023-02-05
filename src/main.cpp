@@ -483,7 +483,7 @@ void loop() {
   // 192 = 3/4 of 255
   // 128 = 1/2 of 255
 
-  #define blue 64
+  #define blue 0
   #define red 192
 
   // temp_motor
@@ -502,11 +502,15 @@ void loop() {
   // tem gauge mapping
   /*
   pwm = temp
+  20 = 10c = 16%
   40 = 50%
+  192 = 90%
   */
 
+ // 255 = 0E
+
   // temperature gauge
-  analogWrite(TEMP_GAUGE_PIN, 40);
+  analogWrite(TEMP_GAUGE_PIN, 20);
 
   // rpm gauge
   rpm_gauge = map(rpm, 0, 7000, 0, 230);
