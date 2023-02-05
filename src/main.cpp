@@ -115,7 +115,7 @@ int last_temp_read = 0;
 int temperature_sensor_loop_count = 0; // used to keep track of the temperature sensor loop count
 
 int16_t rpm = 0; // used to store the rpm
-int8_t temp_motor = 0; // used to store the temperature for the motor
+int16_t temp_motor = 0; // used to store the temperature for the motor
 int8_t temp_inverter = 0; // used to store the temperature for the inverter
 int8_t temp_bat = 0; // used to store the temperature for the battery
 int16_t CURRENT = 0; // used to store the current
@@ -484,19 +484,29 @@ void loop() {
   // 128 = 1/2 of 255
 
   #define blue 0
-  #define red 192
+  #define red 160
 
-  // temp_motor
-  temp_motor = map(temp_motor, -40, 135, blue, red);
+  maxCelTemp = 0;
+  maxCelModTemp = 0;
+  temp_inverter = 0;
+  temp_motor = 130;
 
-  // temp_inverter
-  temp_inverter = map(temp_inverter, -40, 80, blue, red);
+  // temp_motor = temp_motor / 3;
+  int16_t temp_motor_16 = map(temp_motor, -5, 135, blue, red);
 
-  // maxCelModTemp
-  maxCelModTemp = map(maxCelModTemp, -40, 80, blue, red);
+  // temp_inverter = temp_inverter / 2;
+  int16_t temp_inverte_16 = map(temp_inverter, -5, 80, blue, red);
 
-  // maxCelTemp
-  maxCelTemp = map(maxCelTemp, -25, 55, blue, red);
+  // maxCelModTemp = maxCelModTemp / 2;
+  int16_t maxCelModTemp_16 = map(maxCelModTemp, -5, 80, blue, red);
+
+  // maxCelTemp = (maxCelTemp * 3) - 10;
+  int16_t maxCelTemp_16 = map(maxCelTemp, -5, 55, blue, red);
+
+  // get the max of all the temperatures
+  int16_t maxofalltemps = max(temp_motor_16, temp_inverte_16);
+  maxofalltemps = max(maxofalltemps, maxCelModTemp_16);
+  maxofalltemps = max(maxofalltemps, maxCelTemp_16);
   
 
   // tem gauge mapping
@@ -509,8 +519,12 @@ void loop() {
 
  // 255 = 0E
 
+//  maxofalltemps = maxofalltemps;
+
+  uint8_t temp_gauge = maxofalltemps;
+
   // temperature gauge
-  analogWrite(TEMP_GAUGE_PIN, 20);
+  analogWrite(TEMP_GAUGE_PIN, temp_gauge);
 
   // rpm gauge
   rpm_gauge = map(rpm, 0, 7000, 0, 230);
