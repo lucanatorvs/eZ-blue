@@ -486,10 +486,10 @@ void loop() {
   #define blue 0
   #define red 160
 
-  maxCelTemp = 0;
-  maxCelModTemp = 0;
-  temp_inverter = 0;
-  temp_motor = 130;
+  // maxCelTemp = 0;
+  // maxCelModTemp = 0;
+  // temp_inverter = 0;
+  // temp_motor = 130;
 
   // temp_motor = temp_motor / 3;
   int16_t temp_motor_16 = map(temp_motor, -5, 135, blue, red);
