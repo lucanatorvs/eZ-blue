@@ -501,15 +501,24 @@ void loop() {
   int16_t maxCelModTemp_16 = map(maxCelModTemp, -5, 80, blue, red);
 
   // maxCelTemp = (maxCelTemp * 3) - 10;
-  int16_t maxCelTemp_16 = map(maxCelTemp, -5, 55, blue, red);
+  int16_t CelTemp_16;
+  if (maxCelTemp < 30) {
+    CelTemp_16 = map(minCelTemp, -5, 55, blue, red);
+  } else {
+    CelTemp_16 = map(maxCelTemp, -5, 55, blue, red);
+  }
 
-  // get the max of all the temperatures
-  int16_t maxofalltemps = max(temp_motor_16, temp_inverte_16);
-  maxofalltemps = max(maxofalltemps, maxCelModTemp_16);
-  maxofalltemps = max(maxofalltemps, maxCelTemp_16);
+  int16_t maxofalltemps;
+  if (minCelTemp < 10 && temp_motor < 70 && temp_inverter < 70 && maxCelModTemp < 50 && maxCelTemp < 30) {
+    maxofalltemps = CelTemp_16;
+  } else {
+    maxofalltemps = max(temp_motor_16, temp_inverte_16);
+    maxofalltemps = max(maxofalltemps, maxCelModTemp_16);
+    maxofalltemps = max(maxofalltemps, CelTemp_16);
+  }
   
 
-  // tem gauge mapping
+  // temp gauge mapping
   /*
   pwm = temp
   20 = 10c = 16%
@@ -517,9 +526,9 @@ void loop() {
   192 = 90%
   */
 
- // 255 = 0E
+  // 255 = 0E
 
-//  maxofalltemps = maxofalltemps;
+  //  maxofalltemps = maxofalltemps;
 
   uint8_t temp_gauge = maxofalltemps;
 
