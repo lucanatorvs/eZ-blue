@@ -530,7 +530,7 @@ void loop() {
 
   //  maxofalltemps = maxofalltemps;
 
-  uint8_t temp_gauge = maxofalltemps;
+  int16_t temp_gauge = maxofalltemps;
 
   // temperature gauge
   analogWrite(TEMP_GAUGE_PIN, temp_gauge);
@@ -609,7 +609,7 @@ void loop() {
   }
 
   // tern the blower on if the heater is on or still warm
-  if ((heater_switch && running) || temperature > 35) {
+  if ((heater_switch && running) || temperature > 42) {
     PORTA_OUTCLR = bit0; // BLOWER_PIN
     #if DEBUG
       Serial.print("Blower on - ");
